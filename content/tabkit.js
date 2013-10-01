@@ -1072,6 +1072,229 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
     tk.addMethodHook([methodname, '{', '{' + startcode, /\}$/, endcode + '}']);
   };
 
+
+  // Use `Function#toString`, `String#replace` and `eval` to change code
+  // Not recommended but necessary since some code change MUST be made in the middle of method
+  // Use `prependMethod`, `appendMethod` or `wrapMethod` if you can
+  //
+  // If function on path does not exists, warning in debug level
+  // If oldCodeString not found in function, warning in debug level
+  //
+  // @params [String] functionPath The path for function that needs patching
+  // @params [String] oldCodeString The target piece of code
+  // @params [String] newCodeString The new piece of code, use '$&' to reference oldCodeString, since we use String#replace
+  //
+  // @return [Function, null] modified function (However left hand side assignment is already taken care of), or null if no change
+  this.addMethodHook2 = function addMethodHook2(functionPath, oldCodeString, newCodeString) {
+    try {
+      var original = tk.getPropertyByPath(functionPath);
+      var parent = tk.getPropertyParentByPath(functionPath);
+      var lastPart = functionPath.split('.').pop(); // as accessor for left hand side assignment
+
+      if (!original) {
+        tk.debug("Function \"" + functionPath + "\" does not exists when trying to extend the code");
+        return;
+      }
+
+      var oldFuncStr = original.toString();
+      var newFuncStr = oldFuncStr.replace(oldCodeString, newCodeString);
+      if (newFuncStr == oldFuncStr) {
+        tk.debug("Method hook on \"" + functionPath + "\" had no effect, when replacing:\n" + oldCodeString + "\nwith:\n" + newCodeString);
+        return null;
+      }
+
+      // Remember to wrap with brackets or will give undefined
+      var newFunc = eval('('+newFuncStr+')');
+
+      parent[lastPart] = newFunc;
+      return newFunc;
+    }
+    catch (ex) {
+      tk.dump("Method hook of \"" + functionPath + "\" failed with exception:\n" + ex + "\nCode: "+(newFuncStr && newFuncStr.substring(0,150)), ex);
+    }
+  };
+
+  // Find Object (function or whatever) from window
+  //
+  // @params [String] path The path string of the object, seperated by dot (basically the normal way of getting object in JS but in string)
+  // @params [Object] parent The top level object to start finding, default is window
+  //
+  // @return [Object, null] The object found if found, or null if not found
+  this.getPropertyByPath = function(path, parent) {
+    if (parent == null) {
+      parent = window;
+    }
+
+    var obj = parent;
+    var parts = path.split('.'),
+        lastPart = parts.pop();
+
+    if (parts.length === 0) {
+      // Handles path without dot
+      return obj[lastPart];
+    }
+
+    var currentPart = parts[0],
+        length = parts.length,
+        i = 1;
+
+    // This loop will run until the obj is undefeind (property not found) or all parts are used
+    while((obj = obj[currentPart]) && i < length) {
+      currentPart = parts[i];
+      i++;
+    }
+
+    // Only return if the whole path is matched
+    if (obj) {
+      return obj[lastPart];
+    }
+  };
+
+  // Find Object's parent (function or whatever) from window
+  //
+  // @params [String] path The path string of the object, seperated by dot (basically the normal way of getting object in JS but in string)
+  // @params [Object] parent The top level object to start finding, default is window
+  //
+  // @return [Object, null] The object found if found, or null if not found
+  this.getPropertyParentByPath = function(path, parent) {
+    if (parent == null) {
+      parent = window;
+    }
+
+    // Just remove the last path
+    var parts = path.split('.');
+    parts.pop();
+
+    // When path has no separator, it means its top level object relative to parent, so just return parent
+    if (parts.length === 0) {
+      return parent;
+    }
+
+    var newPath = parts.join('.');
+    return tk.getPropertyByPath(newPath, parent);
+  };
+
+  // All prepended/appeneded function should return an instance of this or null;
+  var OverridedFunctionResult = function(result, options) {
+    options || (options = {});
+
+    this.result = result;
+
+    this.shouldEarlyReturn = options.shouldEarlyReturn || false; // This option only works when method is prepended
+    this.shouldOverrideReturn = options.shouldOverrideReturn || false;
+  };
+
+  // Prepend new function to the function on provided path
+  //
+  // @params [String] functionPath The path of function
+  // @params [Function] functionToPrepend The new function to prepend
+  //
+  // @return [Function] modified function (However left hand side assignment is already taken care of)
+  this.prependMethod = function(functionPath, functionToPrepend) {
+    var original = tk.getPropertyByPath(functionPath);
+    var parent = tk.getPropertyParentByPath(functionPath);
+    var lastPart = functionPath.split('.').pop(); // as accessor for left hand side assignment
+
+    if (!original) {
+      tk.debug("Function \"" + functionPath + "\" does not exists when trying to extend the code");
+      return;
+    }
+
+    var newFunc = function() {
+      var originalResult = null;
+      var finalResult = null;
+      var prependedFunctionResult = null;
+
+      // Execute before
+      try {
+        prependedFunctionResult = functionToPrepend.apply(parent, arguments);
+      } catch (ex) {
+        /* might handle this */
+      }
+
+      if (typeof prependedFunctionResult !== 'undefined' && prependedFunctionResult instanceof OverridedFunctionResult && prependedFunctionResult.shouldEarlyReturn) {
+        return prependedFunctionResult.result;
+      }
+
+      // Execute original function
+      try {
+        originalResult = original.apply(parent, arguments);
+      } catch (ex) {
+        /* might handle this */
+      } finally {
+        if (typeof prependedFunctionResult !== 'undefined' && prependedFunctionResult instanceof OverridedFunctionResult && prependedFunctionResult.shouldOverrideReturn) {
+          finalResult = prependedFunctionResult.result;
+        }
+        else {
+          finalResult = originalResult;
+        }
+
+        // return the original result
+        return finalResult;
+      }
+    };
+
+    parent[lastPart] = newFunc;
+    return newFunc;
+  };
+
+  // Append new function to the function on provided path
+  //
+  // @params [String] functionPath The path of function
+  // @params [Function] functionToAppend The new function to append
+  //
+  // @return [Function] modified function (However left hand side assignment is already taken care of)
+  this.appendMethod = function(functionPath, functionToAppend) {
+    var original = tk.getPropertyByPath(functionPath);
+    var parent = tk.getPropertyParentByPath(functionPath);
+    var lastPart = functionPath.split('.').pop(); // as accessor for left hand side assignment
+
+    if (!original) {
+      tk.debug("Function \"" + functionPath + "\" does not exists when trying to extend the code");
+      return;
+    }
+
+    var newFunc = function() {
+      var finalResult = null;
+      var appendedFunctionResult = null;
+
+      // Execute original function
+      var originalResult = original.apply(parent, arguments);
+
+      // Execute after
+      try {
+        appendedFunctionResult = functionToPrepend.apply(parent, arguments);
+      } catch (ex) {
+        /* might handle this */
+      }
+
+      if (typeof appendedFunctionResult !== 'undefined' && appendedFunctionResult instanceof OverridedFunctionResult && appendedFunctionResult.shouldOverrideReturn) {
+        finalResult = appendedFunctionResult.result;
+      }
+      else {
+        finalResult = originalResult;
+      }
+
+      // return the original result
+      return finalResult;
+    };
+
+    parent[lastPart] = newFunc;
+    return newFunc;
+  };
+
+  // Prepend and Append new function to the function on provided path
+  //
+  // @params [String] functionPath The path of function
+  // @params [Function] functionToPrepend The new function to append
+  // @params [Function] functionToAppend The new function to append
+  //
+  // @return [Function] modified function (However left hand side assignment is already taken care of)
+  this.wrapMethod = function(functionPath, functionToPrepend, functionToAppend) {
+    tk.prependMethod(functionPath, functionToPrepend);
+    return tk.appendMethod(functionPath, functionToAppend);
+  };
+
 //}##########################
 //{>>> Sorting & Grouping
 //|##########################
