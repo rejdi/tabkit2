@@ -1,6 +1,10 @@
 ### Changelog
 
 
+- **0.11.0.dev**
+  - Dev: perform some prepend/append/wrap existing methods without using `eval` (and can still early return)
+  - Dev: When monkey patching code in the middle of a function, only use `eval` once (instead of 3 times)
+
 - **0.10.3**
   - Add: Menu items for re-coloring a group and all groups (Right click on a group)
   - Change: Minimal tab width can now be set down to 50px (per request in review)
