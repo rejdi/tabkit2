@@ -3859,8 +3859,13 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
     }
   };
 
-  this.colorAllTabsMenuItem = function colorAllTabsMenuItem(tab, menuItem) {
+  this.colorAllTabsMenuItem = function colorAllTabsMenuItem(tab) {
     // TODO=P4: GCODE Fx3: Make All Tabs prettier (since we mess things up a little by setting -moz-appearance: none)
+    var menuItem = tab.mCorrespondingMenuitem;
+    if (!menuItem) {
+      return;
+    }
+
     try {
       var bgSample = tab;//new line by Pika, Fx2 related
       if (_prefs.getBoolPref("colorTabNotLabel")) {
@@ -3892,52 +3897,23 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
   };
 
   this.colorAllTabsMenu = function colorAllTabsMenu(event) {
-    if (!gBrowser.mCurrentTab.mCorrespondingMenuitem)
-      return;
-    for (var i = 0; i < _tabs.length; i++) {
-      var tab = _tabs[i];
-      if (tab.mCorrespondingMenuitem)
-        tk.colorAllTabsMenuItem(tab, tab.mCorrespondingMenuitem);
+    for (var i = 0; i < gBrowser.tabs.length; i++) {
+      tk.colorAllTabsMenuItem(gBrowser.tabs[i]);
     }
   };
 
   this.postInitAllTabsMenuColors = function postInitAllTabsMenuColors(event) {
 
     // gBrowser.tabContainer.mAllTabsPopup could be null
-    if (_tabContainer.mAllTabsPopup) {
-      _tabContainer.mAllTabsPopup.addEventListener("popupshowing", tk.colorAllTabsMenu, false);
+    if (gBrowser.tabContainer.mAllTabsPopup) {
+      gBrowser.tabContainer.mAllTabsPopup.addEventListener("popupshowing", tk.colorAllTabsMenu, false);
     }
 
-    _tabContainer.addEventListener("TabClose", tk.colorAllTabsMenu, false);
-    _tabContainer.addEventListener("TabSelect", tk.colorAllTabsMenu, false);
+    gBrowser.tabContainer.addEventListener("TabClose", tk.colorAllTabsMenu, false);
+    gBrowser.tabContainer.addEventListener("TabSelect", tk.colorAllTabsMenu, false);
 
     //Need to run at the first time or they will missed out
     tk.colorAllTabsMenu(event);
-
-
-    // if ("LastTab" in window && window.LastTab && LastTab.Browser && LastTab.Browser.OnTabMenuShowing) {
-      // tk.appendMethodCode('LastTab.Browser.OnTabMenuShowing',//{
-        // 'for (var i = 0; i < menu.childNodes.length; i++) { \
-          // var menuItem = menu.childNodes[i]; \
-          // if (LastTab.Preference.TabMenuSortMethod == LastTab.TabMenuSortMethod.MostRecent) \
-              // var tab = LastTab.Browser.TabHistory[menuItem.value]; \
-          // else \
-            // var tab = gBrowser.tabs[menuItem.value]; \
-          // tab.mCorrespondingMenuitem = menuItem; \
-        // } \
-        // tabkit.colorAllTabsMenu();'
-      // );//}
-    // }
-
-    //FF4+ Code Modification for coloring AllTabsPopup
-    if (gBrowser.tabContainer._createTabMenuItem)
-      tk.addMethodHook(
-        'gBrowser.tabContainer._createTabMenuItem',
-
-        'return menuItem;',
-        'tabkit.colorAllTabsMenuItem(aTab, menuitem); \
-        $&'
-      );
   };
   this.postInitListeners.push(this.postInitAllTabsMenuColors);
 
@@ -5807,16 +5783,22 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
   };
 
   this.removeTabsBefore = function removeTabsBefore(contextTab) {
-    if (!contextTab)
+    if (!contextTab) {
       contextTab = gBrowser.selectedTab;
-    for (var i = contextTab._tPos - 1; i >= 0; i--)
+    }
+
+    for (var i = contextTab._tPos - 1; i >= 0; i--) {
       gBrowser.removeTab(_tabs[i]);
+    }
   };
   this.removeTabsAfter = function removeTabsAfter(contextTab) {
-    if (!contextTab)
+    if (!contextTab) {
       contextTab = gBrowser.selectedTab;
-    for (var i = _tabs.length - 1; i > contextTab._tPos; i--)
+    }
+
+    for (var i = _tabs.length - 1; i > contextTab._tPos; i--) {
       gBrowser.removeTab(_tabs[i]);
+    }
   };
 
   /// Method hooks:
