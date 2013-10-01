@@ -989,14 +989,14 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
 
   /// Initialisation:
   this.preInitMethodHooks = function preInitMethodHooks(event) {
-    for each (var hook in tk.earlyMethodHooks)
-      tk.addMethodHook(hook);
+    for each (var hookFunc in tk.earlyMethodHooks)
+      hookFunc();
   };
   this.preInitListeners.push(this.preInitMethodHooks);
 
   this.postInitMethodHooks = function postInitMethodHooks(event) {
-    for each (var hook in tk.lateMethodHooks)
-      tk.addMethodHook(hook);
+    for each (var hookFunc in tk.lateMethodHooks)
+      hookFunc();
   };
   this.postInitListeners.push(this.postInitMethodHooks);
 
@@ -1060,21 +1060,23 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
 
   // TODO=P4: GCODE prepend/append/wrapMethodCode could be done without modifying the actual method to preserve closures
   this.prependMethodCode = function prependMethodCode(methodname, codestring) {
-    tk.addMethodHook([methodname, '{', '{' + codestring]);
+    tk.addMethodHook2(methodname, '{', '{' + codestring);
   };
 
   this.appendMethodCode = function appendMethodCode(methodname, codestring) {
-    tk.addMethodHook([methodname, /\}$/, codestring + '}']);
+    tk.addMethodHook2(methodname, /\}$/, codestring + '}');
   };
 
   this.wrapMethodCode = function wrapMethodCode(methodname, startcode, endcode) {
     //tk.addMethodHook([methodname, /\{([^]*)\}$/, '{' + startcode + '$&' + endcode + '}']);
-    tk.addMethodHook([methodname, '{', '{' + startcode, /\}$/, endcode + '}']);
+    tk.prependMethodCode(methodname, startcode);
+    tk.appendMethodCode(methodname, endcode);
   };
 
 
   // Use `Function#toString`, `String#replace` and `eval` to change code
   // Not recommended but necessary since some code change MUST be made in the middle of method
+  // Also sometimes need to prevent changing the stack trace signature
   // Use `prependMethod`, `appendMethod` or `wrapMethod` if you can
   //
   // If function on path does not exists, warning in debug level
@@ -1488,27 +1490,31 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
     // Fixed Issue 11 by Pika
     // After each tab selecting/switching the whole list of tabs is called against gBrowser.showTab (Source not found, guessed to be Panorama)
     // So this method hook disallows those collapsed and hidden tabs to be expanded by that unknown source
-    tk.addMethodHook([
-      "gBrowser.showTab",
-
-      'if (aTab.hidden) {',
-      ' \
-      $& \
-      if(aTab.hasAttribute("groupcollapsed")) return;',
-    ]);
+    tk.prependMethod('gBrowser.showTab', function (aTab) {
+      if (aTab.hidden && aTab.hasAttribute("groupcollapsed")) {
+        return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+      }
+    });
 
     // Fix: Faviconize is now ignored on grouped tabs (Issue 51)
     // First injected statement required a leading space to make it work, don't know why (probably JS syntax)
-    if (typeof faviconize !== 'undefined' && typeof faviconize.quickFav !== 'undefined' && typeof faviconize.quickFav.dblclick !== 'undefined') {
-      tk.addMethodHook(['faviconize.quickFav.dblclick',
+    if (tk.getPropertyByPath('faviconize.quickFav.dblclick')) {
+      // Must remove listener before modifying it
+      gBrowser.tabContainer.removeEventListener('dblclick', faviconize.quickFav.dblclick, true);
 
-        'faviconize.toggle(e.target);',
-        ' tabkit.debug("faviconize hacked"); \
-        var tab = e.target; \
-        if (tab.hasAttribute("groupid") && tabkit.localPrefService.getBoolPref("doubleClickCollapseExpand")) \
-          { tabkit.debug("faviconize cancelled"); return; } \
-        else \
-          { $& }'])
+      tk.prependMethod('faviconize.quickFav.dblclick', function (e) {
+        if(e.button != 0 || e.target.localName != 'tab')
+          return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+
+        tabkit.debug("faviconize hacked");
+        var tab = e.target;
+        if (tab.hasAttribute("groupid") && tabkit.localPrefService.getBoolPref("doubleClickCollapseExpand")) {
+          tabkit.debug("faviconize cancelled");
+          return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+        }
+      });
+      // Need to reattach the new event listener
+      faviconize.quickFav.update();
     }
   };
   this.initListeners.push(this.initSortingAndGrouping);
@@ -1549,7 +1555,7 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
   /// Method Hooks (for group by opener):
   this.preInitSortingAndGroupingMethodHooks = function preInitSortingAndGroupingMethodHooks(event) {
     // Calculate a stack in addTab, since event listeners can't get to it anymore due to https://bugzilla.mozilla.org/show_bug.cgi?id=390488 (fixed now, but kept this way for compatibility)
-    tk.addMethodHook([
+    tk.addMethodHook2(
       'gBrowser.addTab',
 
       't.dispatchEvent(evt);',
@@ -1579,7 +1585,7 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
         } \
       } \
       $&'
-    ]);
+    );
 
     var relatedTabSources = [
       'nsContextMenu.prototype.openLinkInTab',//{
@@ -1618,10 +1624,13 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
     }
 
     // And a sometimes related, sometimes unrelated tab source:
-    tk.wrapMethodCode(
-      'nsBrowserAccess.prototype.openURI',
-      'tabkit.addingTab(aContext == Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL ? "unrelated" : "related"); try {',
-      '} finally { tabkit.addingTabOver(); }'
+    tk.wrapMethod('nsBrowserAccess.prototype.openURI',
+      function (aURI, aOpener, aWhere, aContext) {
+        tabkit.addingTab(aContext == Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL ? "unrelated" : "related");
+      },
+      function (aURI, aOpener, aWhere, aContext) {
+        tabkit.addingTabOver();
+      }
     );
 
     // And an attribute based related tab source:
@@ -1657,12 +1666,12 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
   this.postInitSortingAndGroupingMethodHooks = function postInitSortingAndGroupingMethodHooks(event) {
     // Give mlb_common.Utils.openUrlInNewTab a function name so it can be detected by sourceTypes!
     if ("mlb_common" in window && "Utils" in mlb_common && "openUrlInNewTab" in mlb_common.Utils)
-      tk.addMethodHook([
+      tk.addMethodHook2(
         'mlb_common.Utils.openUrlInNewTab',
 
         'function (',
         'function mlb_common_Utils_openUrlInNewTab('
-      ]);
+      );
   };
   this.postInitListeners.push(this.postInitSortingAndGroupingMethodHooks);
 
@@ -2689,7 +2698,7 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
   // Tab close focus direction
   this.preInitBlurTabModifications = function preInitBlurTabModifications(event) {
     if ("_blurTab" in gBrowser) { // [Fx3.5b4+]
-      tk.addMethodHook([//{
+      tk.addMethodHook2(
         "gBrowser._blurTab",
 
         'var tab = aTab;',
@@ -2698,7 +2707,7 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
           return; \
         } \
         $&' // When closing the last tab and browser.tabs.closeWindowWithLastTab is false, tk.chooseNextTab is called before the replacement tab is opened, so tk.blurTab returns null; the original _blurTab works fine in this case though
-      ]);//}
+      );
     }
   };
   this.preInitListeners.push(this.preInitBlurTabModifications);
@@ -3376,11 +3385,14 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
       aTab.setAttribute(tk.Groupings.domain, ":dG-" + uriGroup + ":"); // Just to prevent domains that are substrings of each other matching
   };
   // Allow easy access to the initial uri a tab is loading
-  this.earlyMethodHooks.push([
-    "gBrowser.addTab",//{
-    'b.loadURIWithFlags(aURI',
-    't.initialURI = aURI; $&'
-  ]);//}
+  this.earlyMethodHooks.push(function () {
+    tk.addMethodHook2(
+      "gBrowser.addTab",
+
+      'b.loadURIWithFlags(aURI',
+      't.initialURI = aURI; $&'
+    )
+  });
 
   var _seed = 0; // Used to generate ids; TODO-P6: TJS sync across windows to completely avoid duplicates
   this.generateId = function generateId() {
@@ -4251,15 +4263,17 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
   //TODO=P4: GCODE Show warning when tabs are skipped because their group is collapsed
 
   // Show all tab titles in tooltip - one per line - when hovering over a collapsed group (instead of just the visible tab)
-  this.earlyMethodHooks.push([//{
-    "gBrowser.createTooltip",
+  this.earlyMethodHooks.push(function () {
+    tk.addMethodHook2(
+      "gBrowser.createTooltip",
 
-    'tab.getAttribute("label")',
-    '(tab.hasAttribute("groupcollapsed") ? tabkit.getGroupFromTab(tab).map(function __getLabel(ctab) { \
+      'tab.getAttribute("label")',
+      '(tab.hasAttribute("groupcollapsed") ? tabkit.getGroupFromTab(tab).map(function __getLabel(ctab) { \
         return ctab == tab ? "> " + ctab.label : " - " + ctab.label; \
       }).join("\\n") \
-     : $&)'
-  ]);//}
+      : $&)'
+    )
+  });
 
   /// Implement Bug 298571 - support tab duplication (using ctrl) on tab drag and drop
   this._duplicateTab = function _duplicateTab(aTab) {
@@ -4837,7 +4851,12 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
 
   this.initProtectedTabs = function initProtectedTabs(event) {
 
-    tk.prependMethodCode('gBrowser.removeTab', 'if (aTab.getAttribute("protected") == "true") { tabkit.beep(); return; }');
+    tk.prependMethod('gBrowser.removeTab', function (aTab) {
+      if (aTab.getAttribute("protected") == "true") {
+        tabkit.beep();
+        return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+      }
+    });
 
     _tabContainer.addEventListener("click", tk.protectedTabs_onClick, true);
 
@@ -4893,12 +4912,12 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
 
   this.postInitNewTabsByDefault = function postInitNewTabsByDefault(event) {
     // [Fx3.5+]
-    tk.addMethodHook([//{
+    tk.addMethodHook2(
       'gURLBar.handleCommand',
 
       'aTriggeringEvent.altKey',
       '(aTriggeringEvent.altKey ^ gPrefService.getBoolPref("extensions.tabkit.openTabsFrom.addressBar"))'
-    ]);//}
+    );
 
     if ("PlacesUIUtils" in window) {
       // We were patching `PlacesUIUtils.openNodeIn` and `PlacesUIUtils.openNodeWithEvent` before
@@ -5320,7 +5339,10 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
     tk.addDelayedEventListener(_tabContainer, "TabClose", tk.updateMultiRowTabs);
     document.addEventListener("SSTabRestoring", tk.updateMultiRowTabs, false); // "hidden" attributes might be restored!
     window.addEventListener("resize", tk.updateMultiRowTabs, false);
-    tk.appendMethodCode("tabkit.toggleGroupCollapsed", 'tabkit.updateMultiRowTabs();');
+
+    tk.appendMethod('tabkit.toggleGroupCollapsed', function (contextTab) {
+      tabkit.updateMultiRowTabs();
+    });
 
     _tabContainer.addEventListener("TabSelect", tk.multiRow_onTabSelect, false);
     _tabContainer.addEventListener("TabMove", tk.multiRow_onTabSelect, false); // In case a tab is moved out of sight
@@ -6081,38 +6103,34 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
     // ]);
 
     // Disable Panorama, why use Panorama when you have Tabkit?
-    tk.addMethodHook([
-      "TabView.toggle",
-
-      'if (this.isVisible())',
-      '{ alert("Sorry, but Tabkit 2 does not support Panorama (They use the same API). Why use Panorama when you have Tabkit 2? :)"); return; } \
-      $&',
-    ]);
+    tk.prependMethod('TabView.toggle', function () {
+      alert("Sorry, but Tabkit 2 does not support Panorama (They use the same API). Why use Panorama when you have Tabkit 2? :)");
+      return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+    });
     //Also need to disable certain menu item(s)
     var context_tabViewMenu = document.getElementById("context_tabViewMenu");
     context_tabViewMenu.disabled = true;
 
     // Issue 22, some weird behavior by the new animation related functions which mess with tabs' maxWidth
-    tk.addMethodHook([
-      'gBrowser.tabContainer._lockTabSizing',
+    tk.appendMethod('TabView.toggle', function (aTab) {
+      aTab.style.removeProperty('max-width');
+    });
 
-      'tab.style.setProperty("max-width", tabWidth, "important");',
-      ''
-    ]);
-
-    // Issue 47, Ban TabsOnTop if tab bar is not on top
-    tk.prependMethodCode(
-      'TabsOnTop.toggle',
-      'if (!this.enabled && tabkit.localPrefService.getIntPref("tabbarPosition") != tabkit.Positions.TOP) \
-      { alert("Sorry, but Tabkit 2 cannot allow you to enable TabsOnTop unless the tab bar is on top"); return; }'
-    );
+    tk.prependMethod('TabsOnTop.toggle', function () {
+      if (!this.enabled && tabkit.localPrefService.getIntPref("tabbarPosition") != tabkit.Positions.TOP) {
+        alert("Sorry, but Tabkit 2 cannot allow you to enable TabsOnTop unless the tab bar is on top");
+        return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+      }
+    });
 
     // Disable the sliding effect of tab dragging until here is an preference
     if (gBrowser.tabContainer._animateTabMove) {
-      tk.prependMethodCode(
-        'gBrowser.tabContainer._animateTabMove',
-        'this._handleTabSelect(); return;'
-      );
+      tk.prependMethod('gBrowser.tabContainer._animateTabMove', function () {
+        if (!this.enabled && tabkit.localPrefService.getIntPref("tabbarPosition") != tabkit.Positions.TOP) {
+          this._handleTabSelect();
+          return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+        }
+      });
     }
   };
   this.postInitFx4TabEffects = function postInitFx4TabEffects(event) {
