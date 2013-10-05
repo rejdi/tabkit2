@@ -1443,17 +1443,24 @@ var tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide ou
     // Fix: Faviconize is now ignored on grouped tabs (Issue 51)
     // First injected statement required a leading space to make it work, don't know why (probably JS syntax)
     if (tk.getPropertyByPath('faviconize.quickFav.dblclick')) {
-      tk.addMethodHook2('faviconize.quickFav.dblclick',
+      // Must remove listener before modifying it
+      gBrowser.tabContainer.removeEventListener('dblclick', faviconize.quickFav.dblclick, true);
 
-        'faviconize.toggle(e.target);',
-        ' tabkit.debug("faviconize hacked"); \
-        var tab = e.target; \
-        if (tab.hasAttribute("groupid") && tabkit.localPrefService.getBoolPref("doubleClickCollapseExpand")) \
-          { tabkit.debug("faviconize cancelled"); return; } \
-        else \
-          { $& }'
-      );
+      tk.prependMethod('faviconize.quickFav.dblclick', function (e) {
+        if (e.button != 0 || e.target.localName != 'tab')
+          return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+
+        tabkit.debug("faviconize hacked");
+        var tab = e.target;
+        if (tab.hasAttribute("groupid") && tabkit.localPrefService.getBoolPref("doubleClickCollapseExpand")) {
+          tabkit.debug("faviconize cancelled");
+          return new OverridedFunctionResult(null, {shouldEarlyReturn: true});
+        }
+      });
+      // Need to reattach the new event listener
+      faviconize.quickFav.update();
     }
+
   };
   this.initListeners.push(this.initSortingAndGrouping);
 
