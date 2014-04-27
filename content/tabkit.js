@@ -265,10 +265,9 @@
 
 (function (window) {
 
-
 //==================== Modulize JS Scripts START ====================//
 
-/* Includes a javascript file with loadSubScript
+/* Includes a javascript file with loadSubScript (Murated version that requires chrome registration)
 *
 * @param src (String)
 * The url of a javascript file to include.
@@ -277,11 +276,12 @@
   var o = {};
   Components.utils.import("resource://gre/modules/Services.jsm", o);
   var uri = o.Services.io.newURI(
-      src, null, o.Services.io.newURI(__SCRIPT_URI_SPEC__, null, null));
+      src, null, o.Services.io.newURI("chrome://includes/" + src, null, null));
   o.Services.scriptloader.loadSubScript(uri.spec, global);
-})(this);
+})(window);
 
-/* Imports a commonjs style javascript file with loadSubScript
+
+/* Imports a commonjs style javascript file with loadSubScript (Murated version that requires chrome registration)
 *
 * @param src (String)
 * The url of a javascript file.
@@ -293,18 +293,20 @@
     var scope = {require: global.require, exports: {}};
     var tools = {};
     Components.utils.import("resource://gre/modules/Services.jsm", tools);
-    var baseURI = tools.Services.io.newURI(__SCRIPT_URI_SPEC__, null, null);
     try {
       var uri = tools.Services.io.newURI(
-          "packages/" + src + ".js", null, baseURI);
+          "chrome://packages/" + src + ".js", null, null);
       tools.Services.scriptloader.loadSubScript(uri.spec, scope);
     } catch (e) {
-      var uri = tools.Services.io.newURI(src, null, baseURI);
-      tools.Services.scriptloader.loadSubScript(uri.spec, scope);
+      try {
+        var uri = tools.Services.io.newURI("chrome://packages/" + src, null, null);
+        tools.Services.scriptloader.loadSubScript(uri.spec, scope);
+      } catch (e) {
+      }
     }
     return modules[src] = scope.exports;
   }
-})(this);
+})(window);
 
 //==================== Modulize JS Scripts END ====================//
 
@@ -315,21 +317,27 @@ window.tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide
 //|##########################
 
   /// Private globals:
-  const tk          = this; // Functions passed as parameters lose their this, as do nested functions, and tabkit is a bit long(!), so store it in 'tk'
-
   const XUL_NS      = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+  const { classes: Cc, Constructor: CC, interfaces: Ci, utils: Cu,
+        results: Cr, manager: Cm } = Components;
 
-  const Cc          = Components.classes;
-  const Ci          = Components.interfaces;
-
+  // Functions passed as parameters lose their this, as do nested functions, and tabkit is a bit long(!), so store it in 'tk'
+  const tk          = this;
   const PREF_BRANCH = "extensions.tabkit.";
-
 
   const TAB_MIN_WIDTH = 50;
 
-//}##########################
-//{### Services
-//|##########################
+  //}##########################
+  //{### Services
+  //|##########################
+
+
+  // Require any CommonJS style files
+  // var {unload} = require("unload");
+  // var utils = require("utils");
+  // var {log, debug, dump} = require("console");
+  // var prefUtils = require("pref-utils");
+  // var sessionStore = require("session-store");
 
   // Make sure we can use gPrefService from now on (even if this isn't a browser window!)
   if (typeof gPrefService == "undefined" || !gPrefService)

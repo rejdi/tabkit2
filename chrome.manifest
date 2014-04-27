@@ -1,14 +1,17 @@
-content	tabkit	content/
+content tabkit  content/
 
-overlay	chrome://browser/content/browser.xul	chrome://tabkit/content/browserOverlay.xul
-overlay	chrome://browser/content/browser.xul	chrome://tabkit/content/globalOverlay.xul
-overlay	chrome://browser/content/bookmarks/bookmarksManager.xul	chrome://tabkit/content/globalOverlay.xul
-overlay	chrome://browser/content/bookmarks/bookmarksPanel.xul	chrome://tabkit/content/globalOverlay.xul
-overlay	chrome://browser/content/history/history-panel.xul	chrome://tabkit/content/globalOverlay.xul
-overlay	chrome://browser/content/places/places.xul	chrome://tabkit/content/globalOverlay.xul
+resource packages packages/
+resource includes includes/
 
-locale	tabkit	en-US locale/en-US/
+overlay chrome://browser/content/browser.xul chrome://tabkit/content/browserOverlay.xul
+overlay chrome://browser/content/browser.xul chrome://tabkit/content/globalOverlay.xul
+overlay chrome://browser/content/bookmarks/bookmarksManager.xul chrome://tabkit/content/globalOverlay.xul
+overlay chrome://browser/content/bookmarks/bookmarksPanel.xul chrome://tabkit/content/globalOverlay.xul
+overlay chrome://browser/content/history/history-panel.xul chrome://tabkit/content/globalOverlay.xul
+overlay chrome://browser/content/places/places.xul chrome://tabkit/content/globalOverlay.xul
 
-skin	tabkit	classic/1.0	skin/classic/
+locale tabkit en-US locale/en-US/
+
+skin tabkit classic/1.0 skin/classic/
 
 style chrome://browser/content/browser.xul chrome://tabkit/content/variable.css

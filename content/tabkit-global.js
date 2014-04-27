@@ -51,18 +51,24 @@ window.tabkitGlobal = new function _tabkitGlobal() { // Primarily just a 'namesp
 //|##########################
 
   /// Private globals:
-  const tkGlobal    = this;
-
-  const PREF_BRANCH = "extensions.tabkit.";
-
   const XUL_NS      = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
+  const { classes: Cc, Constructor: CC, interfaces: Ci, utils: Cu,
+        results: Cr, manager: Cm } = Components;
 
-  const Cc          = Components.classes;
-  const Ci          = Components.interfaces;
+  const tkGlobal    = this;
+  const PREF_BRANCH = "extensions.tabkit.";
 
 //}##########################
 //{### Services
 //|##########################
+
+
+  // Require any CommonJS style files
+  // var utils = require("utils");
+  // var {unload} = require("unload");
+  // var {log, debug, dump} = require("console");
+  // var prefUtils = require("pref-utils");
+  // var sessionStore = require("session-store");
 
   // Make sure we can use gPrefService from now on (even if this isn't a browser window!)
   if (typeof gPrefService == "undefined" || !gPrefService)
