@@ -7280,7 +7280,7 @@ window.tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide
   this.postInitFx4TabEffects = function postInitFx4TabEffects(event) {
     // https://developer.mozilla.org/en-US/docs/Web/Events/fullscreen
     window.addEventListener("fullscreen", tk.onFullScreenToggle, false);
-    gBrowser.tabContainer.addEventListener("scroll", function(event) {
+/*    gBrowser.tabContainer.addEventListener("scroll", function(event) {
 	event.preventDefault();
 	event.stopPropagation();
 	return false;
@@ -7289,7 +7289,7 @@ window.tabkit = new function _tabkit() { // Primarily just a 'namespace' to hide
 	event.preventDefault();
 	event.stopPropagation();
 	return false;
-    }, true);
+    }, true);*/
   };
   this.postInitListeners.push(this.postInitFx4Modifications);
   this.postInitListeners.push(this.postInitFx4TabEffects);
